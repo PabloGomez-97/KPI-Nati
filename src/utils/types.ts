@@ -1,4 +1,6 @@
-export interface Operation {
+export type RawRow = string[];
+
+export type Operation = {
   executive: string;
   date: Date | null;
   client?: string | null;
@@ -7,13 +9,11 @@ export interface Operation {
   expense?: number;
   profit?: number;
   commission?: number;
-}
-
-export type RawRow = string[];
+};
 
 export type MonthKey = `${number}-${number}`;
 
-export interface MonthlyAgg {
+export type MonthlyAgg = {
   month: MonthKey;
   executive: string;
   income: number;
@@ -25,35 +25,35 @@ export interface MonthlyAgg {
   quotes: number;
   winrate: number | null;
   clients?: Set<string>;
-}
+};
 
-export interface ExecutiveTrend {
+export type ExecutiveTrend = {
   currentMonth: MonthlyAgg | null;
   previousMonth: MonthlyAgg | null;
   profitChange: number | null;
   profitPctChange: number | null;
   opsChange: number | null;
   trend: 'up' | 'down' | 'stable' | 'new';
-}
+};
 
-export interface ExecutiveSummary {
+export type ExecutiveSummary = {
   ops: number;
   income: number;
   expense: number;
   profit: number;
   commission: number;
   clients: Set<string>;
-}
+};
 
-export interface TopPerformer {
+export type TopPerformer = {
   executive: string;
   profit: number;
   profitMargin: number;
   income: number;
   ops: number;
-}
+};
 
-export interface GlobalKPIs {
+export type GlobalKPIs = {
   totalIncome: number;
   totalProfit: number;
   totalOps: number;
@@ -61,4 +61,4 @@ export interface GlobalKPIs {
   avgProfitMargin: number;
   avgDealSize: number;
   executiveCount: number;
-}
+};

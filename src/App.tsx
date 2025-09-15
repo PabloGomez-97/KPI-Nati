@@ -5,27 +5,28 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { TrendingUp, TrendingDown, Users, DollarSign, Target, Award, Calendar, BarChart3, Upload } from "lucide-react";
 
 // Imports de componentes y utilidades
-import { KPICard } from './components/KPICard';
 import { TrendIndicator } from './components/TrendIndicator';
 import { ExecutiveModal } from './components/ExecutiveModal';
-import { RevenueProfitChart } from './components/charts/RevenueProfitChart';
-import { MarginChart } from './components/charts/MarginChart';
+import { EnhancedKPISection } from './components/EnhancedKPISection';
+import { CompactChartsGrid } from './components/charts/CompactCharts';
 import { extractOperations, aggregateMonthly } from './utils/dataProcessing';
+import { calculateEnhancedGlobalKPIs, calculateAdvancedKPIs } from './utils/advancedKPIs';
 import { formatMoney, formatPct, truncateText, getFirstWord } from './utils/formatters';
 import type {
-  RawRow,
   Operation,
   MonthlyAgg,
   ExecutiveTrend,
   ExecutiveSummary,
   TopPerformer,
-  GlobalKPIs
+  GlobalKPIs,
+  AdvancedKPIs
 } from './utils/types';
 
 export default function App() {
   const [ops, setOps] = useState<Operation[] | null>(null);
   const [selectedExecutive, setSelectedExecutive] = useState<string>("all");
   const [selectedMonth, setSelectedMonth] = useState<string>("all");
+  const [selectedKPI, setSelectedKPI] = useState<string>("none");
   const [modalExecutive, setModalExecutive] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   
@@ -101,33 +102,19 @@ export default function App() {
     return Array.from(monthMap.values()).sort((a, b) => a.month.localeCompare(b.month));
   }, [monthly, selectedExecutive, selectedMonth]);
 
-  // PASO 5: KPIs globales
+  // PASO 5: KPIs globales mejorados
   const globalKPIs = useMemo((): GlobalKPIs | null => {
-    if (!summaryData) return null;
-    
-    const totalIncome = Object.values(summaryData).reduce((sum, exec) => sum + exec.income, 0);
-    const totalProfit = Object.values(summaryData).reduce((sum, exec) => sum + exec.profit, 0);
-    const totalOps = Object.values(summaryData).reduce((sum, exec) => sum + exec.ops, 0);
-    const allClients = new Set<string>();
-    Object.values(summaryData).forEach(exec => {
-      exec.clients.forEach(client => allClients.add(client));
-    });
-    const totalClients = allClients.size;
-    const avgProfitMargin = totalIncome > 0 ? (totalProfit / totalIncome) * 100 : 0;
-    const avgDealSize = totalOps > 0 ? totalIncome / totalOps : 0;
-    
-    return {
-      totalIncome,
-      totalProfit,
-      totalOps,
-      totalClients,
-      avgProfitMargin,
-      avgDealSize,
-      executiveCount: Object.keys(summaryData).length
-    };
-  }, [summaryData]);
+    if (!summaryData || !ops || !monthly) return null;
+    return calculateEnhancedGlobalKPIs(ops, monthly, summaryData);
+  }, [summaryData, ops, monthly]);
 
-  // PASO 6: Top performers
+  // PASO 6: KPIs avanzados
+  const advancedKPIs = useMemo((): AdvancedKPIs | null => {
+    if (!summaryData || !ops || !monthly) return null;
+    return calculateAdvancedKPIs(ops, monthly, summaryData);
+  }, [summaryData, ops, monthly]);
+
+  // PASO 7: Top performers
   const topPerformers = useMemo((): TopPerformer[] => {
     if (!summaryData || Object.keys(summaryData).length === 0) return [];
     return Object.entries(summaryData)
@@ -142,7 +129,7 @@ export default function App() {
       .sort((a, b) => b.profit - a.profit);
   }, [summaryData]);
 
-  // PASO 7: Análisis de tendencias
+  // PASO 8: Análisis de tendencias
   const executiveTrends = useMemo((): Record<string, ExecutiveTrend> => {
     if (!monthly || availableMonths.length < 2 || selectedMonth !== "all") return {};
     
@@ -189,7 +176,7 @@ export default function App() {
     return trends;
   }, [monthly, availableMonths, selectedMonth]);
 
-  // PASO 8: Modal operations
+  // PASO 9: Modal operations
   const modalOperations = useMemo(() => {
     if (!ops || !modalExecutive) return [];
     
@@ -239,190 +226,164 @@ export default function App() {
 
   return (
     <div style={{ backgroundColor: '#f8f9fa', minHeight: '100vh' }}>
-      {/* Header */}
+      {/* Header Mejorado */}
       <nav className="navbar navbar-expand-lg bg-white shadow-sm mb-4">
         <div className="container-fluid">
           <div className="d-flex align-items-center">
-            <BarChart3 size={32} className="text-primary me-3" />
+            <BarChart3 size={28} className="text-primary me-3" />
             <div>
-              <h1 className="navbar-brand fw-bold mb-0 fs-3">Dashboard Comercial</h1>
-              <small className="text-muted">Análisis de KPIs y Comisiones</small>
+              <h1 className="navbar-brand fw-bold mb-0 fs-4">Dashboard Comercial</h1>
+              <small className="text-muted">Análisis Avanzado de KPIs y Comisiones</small>
             </div>
           </div>
           <div className="d-flex align-items-center text-muted">
-            <Calendar size={20} className="me-2" />
+            <Calendar size={18} className="me-2" />
             <span className="small">{new Date().toLocaleDateString('es-CL')}</span>
           </div>
         </div>
       </nav>
 
       <div className="container-fluid px-4">
-        {/* Upload Section */}
+        {/* Upload Section Compacto */}
         <div className="card shadow-sm mb-4">
-          <div className="card-body">
-            <div className="d-flex align-items-center mb-3">
-              <div className="p-2 rounded bg-primary bg-opacity-10 me-3">
-                <Upload size={24} className="text-primary" />
+          <div className="card-body p-3">
+            <div className="row align-items-center">
+              <div className="col-md-8">
+                <div className="d-flex align-items-center">
+                  <Upload size={20} className="text-primary me-2" />
+                  <div>
+                    <h6 className="mb-1">Cargar Datos</h6>
+                    <small className="text-muted">Sube tu archivo CSV para analizar los KPIs</small>
+                  </div>
+                </div>
               </div>
-              <div>
-                <h5 className="card-title mb-1">Cargar Datos</h5>
-                <small className="text-muted">Sube tu archivo CSV para analizar los KPIs</small>
+              <div className="col-md-4">
+                <input 
+                  type="file" 
+                  className="form-control form-control-sm" 
+                  accept=".csv" 
+                  onChange={(e) => { 
+                    const f = e.target.files?.[0]; 
+                    if (f) handleFile(f); 
+                  }} 
+                />
               </div>
-            </div>
-            
-            <div className="border border-3 border-dashed rounded p-4 text-center" style={{ borderColor: '#dee2e6' }}>
-              <input 
-                type="file" 
-                className="form-control" 
-                accept=".csv" 
-                onChange={(e) => { 
-                  const f = e.target.files?.[0]; 
-                  if (f) handleFile(f); 
-                }} 
-              />
-              <small className="text-muted mt-2 d-block">El archivo debe mantener la estructura del reporte original</small>
             </div>
           </div>
         </div>
 
         {!ops && (
-          <div className="alert alert-warning d-flex align-items-center" role="alert">
-            <Target size={20} className="me-2" />
-            <strong>Sube un archivo CSV para ver el análisis de KPIs</strong>
+          <div className="alert alert-info d-flex align-items-center" role="alert">
+            <Target size={18} className="me-2" />
+            Sube un archivo CSV para ver el análisis de KPIs
           </div>
         )}
 
-        {ops && globalKPIs && (
+        {ops && globalKPIs && advancedKPIs && (
           <>
-            {/* KPIs Globales */}
-            <div className="row g-4 mb-4">
-              <div className="col-lg-3 col-md-6">
-                <KPICard
-                  title="Facturación Total"
-                  value={formatMoney(globalKPIs.totalIncome)}
-                  subtitle={`${globalKPIs.totalOps} operaciones`}
-                  icon={DollarSign}
-                  bgColor="primary"
-                />
-              </div>
-              <div className="col-lg-3 col-md-6">
-                <KPICard
-                  title="Profit Total"
-                  value={formatMoney(globalKPIs.totalProfit)}
-                  subtitle={`Margen: ${formatPct(globalKPIs.avgProfitMargin)}`}
-                  icon={TrendingUp}
-                  bgColor="success"
-                />
-              </div>
-              <div className="col-lg-3 col-md-6">
-                <KPICard
-                  title="Clientes Activos"
-                  value={globalKPIs.totalClients.toString()}
-                  subtitle={`${globalKPIs.executiveCount} ejecutivos`}
-                  icon={Users}
-                  bgColor="info"
-                />
-              </div>
-              <div className="col-lg-3 col-md-6">
-                <KPICard
-                  title="Ticket Promedio"
-                  value={formatMoney(globalKPIs.avgDealSize)}
-                  subtitle="Por operación"
-                  icon={Award}
-                  bgColor="warning"
-                />
-              </div>
-            </div>
+            {/* Sección de KPIs Mejorada */}
+            <EnhancedKPISection
+              globalKPIs={globalKPIs}
+              advancedKPIs={advancedKPIs}
+              selectedKPI={selectedKPI}
+              onKPISelect={setSelectedKPI}
+            />
 
-            {/* Controles y Top Performers */}
-            <div className="row g-4 mb-4">
-              {/* Filtros */}
+            {/* Gráficos Compactos */}
+            <CompactChartsGrid 
+              data={chartData} 
+              selectedKPI={selectedKPI}
+            />
+
+            {/* Controles y Top Performers Compactos */}
+            <div className="row g-3 mb-4">
+              {/* Filtros Compactos */}
               <div className="col-lg-4">
-                <div className="card shadow-sm h-100">
-                  <div className="card-body">
-                    <h5 className="card-title mb-3">Filtros</h5>
-                    <div className="mb-3">
-                      <label className="form-label fw-semibold">Ejecutivo</label>
-                      <select
-                        value={selectedExecutive}
-                        onChange={(e) => setSelectedExecutive(e.target.value)}
-                        className="form-select"
-                      >
-                        <option value="all">Todos los ejecutivos</option>
-                        {executiveOptions.map(exec => (
-                          <option key={exec} value={exec}>{truncateText(exec, 30)}</option>
-                        ))}
-                      </select>
+                <div className="card shadow-sm">
+                  <div className="card-body p-3">
+                    <h6 className="card-title mb-3">Filtros</h6>
+                    <div className="row g-2">
+                      <div className="col-12">
+                        <label className="form-label small fw-semibold">Ejecutivo</label>
+                        <select
+                          value={selectedExecutive}
+                          onChange={(e) => setSelectedExecutive(e.target.value)}
+                          className="form-select form-select-sm"
+                        >
+                          <option value="all">Todos los ejecutivos</option>
+                          {executiveOptions.map(exec => (
+                            <option key={exec} value={exec}>{truncateText(exec, 30)}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="col-12">
+                        <label className="form-label small fw-semibold">Período</label>
+                        <select
+                          value={selectedMonth}
+                          onChange={(e) => setSelectedMonth(e.target.value)}
+                          className="form-select form-select-sm"
+                        >
+                          <option value="all">Todos los meses</option>
+                          {availableMonths.map(month => (
+                            <option key={month} value={month}>{month}</option>
+                          ))}
+                        </select>
+                      </div>
+                      {(selectedExecutive !== "all" || selectedMonth !== "all") && (
+                        <div className="col-12">
+                          <button 
+                            className="btn btn-outline-secondary btn-sm w-100"
+                            onClick={() => {
+                              setSelectedExecutive("all");
+                              setSelectedMonth("all");
+                            }}
+                          >
+                            Limpiar filtros
+                          </button>
+                        </div>
+                      )}
                     </div>
-                    
-                    <div className="mb-3">
-                      <label className="form-label fw-semibold">Período</label>
-                      <select
-                        value={selectedMonth}
-                        onChange={(e) => setSelectedMonth(e.target.value)}
-                        className="form-select"
-                      >
-                        <option value="all">Todos los meses</option>
-                        {availableMonths.map(month => (
-                          <option key={month} value={month}>{month}</option>
-                        ))}
-                      </select>
-                    </div>
-                    
-                    {(selectedExecutive !== "all" || selectedMonth !== "all") && (
-                      <button 
-                        className="btn btn-outline-secondary btn-sm"
-                        onClick={() => {
-                          setSelectedExecutive("all");
-                          setSelectedMonth("all");
-                        }}
-                      >
-                        Limpiar filtros
-                      </button>
-                    )}
                   </div>
                 </div>
               </div>
 
-              {/* Top Performers */}
+              {/* Top Performers Compacto */}
               <div className="col-lg-8">
-                <div className="card shadow-sm h-100">
-                  <div className="card-body">
-                    <h5 className="card-title mb-3">Top Performers</h5>
+                <div className="card shadow-sm">
+                  <div className="card-body p-3">
+                    <h6 className="card-title mb-3">Top Performers</h6>
                     {topPerformers.length > 0 ? (
                       <div className="row g-2">
                         {topPerformers.slice(0, 3).map((performer, index) => (
-                          <div key={performer.executive + index} className="col-12">
-                            <div className="d-flex align-items-center justify-content-between p-3 bg-light rounded">
-                              <div className="d-flex align-items-center">
-                                <div 
-                                  className={`rounded-circle d-flex align-items-center justify-content-center text-white fw-bold me-3`}
-                                  style={{ 
-                                    width: '40px', 
-                                    height: '40px',
-                                    backgroundColor: index === 0 ? '#ffc107' : index === 1 ? '#6c757d' : '#fd7e14'
-                                  }}
-                                >
-                                  {index + 1}
-                                </div>
-                                <div>
-                                  <div className="fw-semibold" title={performer.executive}>
-                                    {truncateText(performer.executive, 25)}
-                                  </div>
-                                  <small className="text-muted">{performer.ops} operaciones</small>
-                                </div>
+                          <div key={performer.executive + index} className="col-lg-4">
+                            <div className="d-flex align-items-center p-2 bg-light rounded">
+                              <div 
+                                className={`rounded-circle d-flex align-items-center justify-content-center text-white fw-bold me-2`}
+                                style={{ 
+                                  width: '30px', 
+                                  height: '30px',
+                                  backgroundColor: index === 0 ? '#ffc107' : index === 1 ? '#6c757d' : '#fd7e14',
+                                  fontSize: '12px'
+                                }}
+                              >
+                                {index + 1}
                               </div>
-                              <div className="text-end">
-                                <div className="fw-bold">{formatMoney(performer.profit)}</div>
-                                <small className="text-muted">{formatPct(performer.profitMargin)}</small>
+                              <div className="flex-grow-1">
+                                <div className="fw-semibold small" title={performer.executive}>
+                                  {truncateText(performer.executive, 20)}
+                                </div>
+                                <div className="d-flex justify-content-between">
+                                  <small className="text-muted">{performer.ops} ops</small>
+                                  <small className="fw-bold">{formatMoney(performer.profit)}</small>
+                                </div>
                               </div>
                             </div>
                           </div>
                         ))}
                       </div>
                     ) : (
-                      <div className="text-center text-muted py-4">
-                        <p>No hay datos suficientes para mostrar el ranking</p>
+                      <div className="text-center text-muted py-3">
+                        <p className="mb-0 small">No hay datos suficientes para mostrar el ranking</p>
                       </div>
                     )}
                   </div>
@@ -430,125 +391,35 @@ export default function App() {
               </div>
             </div>
 
-            {/* Gráficos Principales */}
-            <div className="row g-4 mb-4">
-              <div className="col-lg-6">
-                <RevenueProfitChart data={chartData} />
-              </div>
-              <div className="col-lg-6">
-                <MarginChart data={chartData} />
-              </div>
-            </div>
-
-            {/* Distribución por Ejecutivo */}
-            {selectedExecutive === "all" && topPerformers.length > 1 && (
-              <div className="row g-4 mb-4">
-                <div className="col-lg-6">
-                  <div className="card shadow-sm h-100">
-                    <div className="card-body">
-                      <h5 className="card-title mb-3">Profit por Ejecutivo</h5>
-                      <div style={{ height: 350 }}>
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={topPerformers.slice(0, 5)}>
-                            <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis 
-                              dataKey="executive" 
-                              angle={-45}
-                              textAnchor="end"
-                              height={80}
-                              tickFormatter={(value) => truncateText(value, 15)}
-                            />
-                            <YAxis />
-                            <Tooltip 
-                              formatter={(value: any) => [formatMoney(value), 'Profit']}
-                              labelFormatter={(label) => `Ejecutivo: ${truncateText(label, 30)}`}
-                            />
-                            <Bar dataKey="profit" fill="#198754" />
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="col-lg-6">
-                  <div className="card shadow-sm h-100">
-                    <div className="card-body">
-                      <h5 className="card-title mb-3">Operaciones por Ejecutivo</h5>
-                      <div style={{ height: 350 }}>
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={topPerformers.slice(0, 5)}>
-                            <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis 
-                              dataKey="executive" 
-                              angle={-45}
-                              textAnchor="end"
-                              height={80}
-                              tickFormatter={(value) => truncateText(value, 15)}
-                            />
-                            <YAxis />
-                            <Tooltip 
-                              labelFormatter={(label) => `Ejecutivo: ${truncateText(label, 30)}`}
-                            />
-                            <Bar dataKey="ops" fill="#6f42c1" />
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Análisis de Tendencias por Ejecutivo */}
+            {/* Análisis de Tendencias Compacto */}
             {availableMonths.length > 1 && selectedMonth === "all" && Object.keys(executiveTrends).length > 0 && (
               <div className="card shadow-sm mb-4">
-                <div className="card-header bg-light">
-                  <h5 className="card-title mb-0">Análisis de Tendencias Mensuales</h5>
+                <div className="card-header bg-light p-3">
+                  <h6 className="card-title mb-0">Análisis de Tendencias Mensuales</h6>
                   <small className="text-muted">Comparación del último mes vs mes anterior</small>
                 </div>
-                <div className="card-body">
-                  <div className="row g-3">
-                    {Object.entries(executiveTrends).map(([exec, trend]) => (
-                      <div key={exec} className="col-lg-4 col-md-6">
-                        <div className="card h-100 border-0 bg-light">
-                          <div className="card-body p-3">
-                            <div className="d-flex justify-content-between align-items-start mb-2">
-                              <h6 className="card-title mb-0" title={exec}>
-                                {truncateText(exec, 20)}
+                <div className="card-body p-3">
+                  <div className="row g-2">
+                    {Object.entries(executiveTrends).slice(0, 6).map(([exec, trend]) => (
+                      <div key={exec} className="col-lg-2 col-md-4">
+                        <div className="card border-0 bg-light h-100">
+                          <div className="card-body p-2">
+                            <div className="d-flex justify-content-between align-items-start mb-1">
+                              <h6 className="card-title mb-0 small" title={exec}>
+                                {truncateText(exec, 15)}
                               </h6>
                               <TrendIndicator trend={trend.trend} profitPctChange={trend.profitPctChange} />
                             </div>
                             
-                            <div className="row g-2 small">
-                              <div className="col-6">
-                                <div className="text-muted">Mes Actual:</div>
-                                <div className="fw-bold">{trend.currentMonth?.month}</div>
-                                <div className="text-success">{formatMoney(trend.currentMonth?.profit || 0)}</div>
+                            <div className="small">
+                              <div className="d-flex justify-content-between">
+                                <span className="text-muted">Actual:</span>
+                                <span className="fw-bold">{formatMoney(trend.currentMonth?.profit || 0)}</span>
                               </div>
-                              <div className="col-6">
-                                <div className="text-muted">Mes Anterior:</div>
-                                <div className="fw-bold">{trend.previousMonth?.month || 'N/A'}</div>
-                                <div className="text-muted">{formatMoney(trend.previousMonth?.profit || 0)}</div>
+                              <div className="d-flex justify-content-between">
+                                <span className="text-muted">Anterior:</span>
+                                <span>{formatMoney(trend.previousMonth?.profit || 0)}</span>
                               </div>
-                              
-                              {trend.profitChange !== null && (
-                                <div className="col-12 mt-2">
-                                  <div className="text-muted">Cambio en Profit:</div>
-                                  <div className={`fw-bold ${trend.profitChange >= 0 ? 'text-success' : 'text-danger'}`}>
-                                    {trend.profitChange >= 0 ? '+' : ''}{formatMoney(trend.profitChange)}
-                                  </div>
-                                </div>
-                              )}
-                              
-                              {trend.opsChange !== null && (
-                                <div className="col-12">
-                                  <div className="text-muted">Cambio en Operaciones:</div>
-                                  <div className={`fw-bold ${trend.opsChange >= 0 ? 'text-success' : 'text-danger'}`}>
-                                    {trend.opsChange >= 0 ? '+' : ''}{trend.opsChange}
-                                  </div>
-                                </div>
-                              )}
                             </div>
                           </div>
                         </div>
@@ -559,30 +430,30 @@ export default function App() {
               </div>
             )}
 
-            {/* RESUMEN POR EJECUTIVO */}
+            {/* RESUMEN POR EJECUTIVO Compacto */}
             <div className="card shadow-sm mb-4">
-              <div className="card-header bg-light">
+              <div className="card-header bg-light p-3">
                 <div className="d-flex justify-content-between align-items-center">
-                  <h5 className="card-title mb-0">
+                  <h6 className="card-title mb-0">
                     Resumen por Ejecutivo
                     {selectedMonth !== "all" && <span className="text-muted"> - {selectedMonth}</span>}
-                  </h5>
-                  <small className="text-muted">💡 Haz clic en un ejecutivo para ver sus operaciones</small>
+                  </h6>
+                  <small className="text-muted">Haz clic en un ejecutivo para ver sus operaciones</small>
                 </div>
               </div>
               <div className="card-body p-0">
                 <div className="table-responsive">
-                  <table className="table table-hover mb-0">
+                  <table className="table table-hover mb-0 table-sm">
                     <thead className="table-light">
                       <tr>
-                        <th>Ejecutivo</th>
-                        <th>Operaciones</th>
-                        <th>Facturación</th>
-                        <th>Profit</th>
-                        <th>Margen %</th>
-                        <th>Clientes</th>
-                        <th>Ticket Promedio</th>
-                        {availableMonths.length > 1 && selectedMonth === "all" && <th>Tendencia</th>}
+                        <th className="small">Ejecutivo</th>
+                        <th className="small">Operaciones</th>
+                        <th className="small">Facturación</th>
+                        <th className="small">Profit</th>
+                        <th className="small">Margen %</th>
+                        <th className="small">Clientes</th>
+                        <th className="small">Ticket Promedio</th>
+                        {availableMonths.length > 1 && selectedMonth === "all" && <th className="small">Tendencia</th>}
                       </tr>
                     </thead>
                     <tbody>
@@ -599,21 +470,22 @@ export default function App() {
                               setModalExecutive(exec);
                               setShowModal(true);
                             }}
+                            className="align-middle"
                           >
                             <td>
-                              <div className="fw-semibold text-primary" title={exec} style={{ textDecoration: 'underline' }}>
+                              <div className="fw-semibold text-primary small" title={exec} style={{ textDecoration: 'underline' }}>
                                 {truncateText(exec, 25)}
                               </div>
                             </td>
-                            <td>{data.ops.toLocaleString()}</td>
-                            <td>{formatMoney(data.income)}</td>
+                            <td className="small">{data.ops.toLocaleString()}</td>
+                            <td className="small">{formatMoney(data.income)}</td>
                             <td>
-                              <span className={`fw-bold ${data.profit >= 0 ? 'text-success' : 'text-danger'}`}>
+                              <span className={`fw-bold small ${data.profit >= 0 ? 'text-success' : 'text-danger'}`}>
                                 {formatMoney(data.profit)}
                               </span>
                             </td>
                             <td>
-                              <span className={`badge ${
+                              <span className={`badge badge-sm ${
                                 profitMargin >= 20 ? 'bg-success' :
                                 profitMargin >= 10 ? 'bg-warning' :
                                 'bg-danger'
@@ -621,8 +493,8 @@ export default function App() {
                                 {formatPct(profitMargin)}
                               </span>
                             </td>
-                            <td>{data.clients.size}</td>
-                            <td>{formatMoney(avgTicket)}</td>
+                            <td className="small">{data.clients.size}</td>
+                            <td className="small">{formatMoney(avgTicket)}</td>
                             {availableMonths.length > 1 && selectedMonth === "all" && (
                               <td>
                                 {trend && <TrendIndicator trend={trend.trend} profitPctChange={trend.profitPctChange} />}
@@ -646,29 +518,34 @@ export default function App() {
               selectedMonth={selectedMonth}
             />
 
-            {/* Análisis Detallado por Mes */}
+            {/* Análisis Detallado por Ejecutivo Individual */}
             {selectedExecutive !== "all" && (
               <div className="card shadow-sm mb-4">
-                <div className="card-header bg-light">
-                  <h5 className="card-title mb-0">Análisis Mensual - {truncateText(selectedExecutive, 30)}</h5>
+                <div className="card-header bg-light p-3">
+                  <h6 className="card-title mb-0">Análisis Mensual - {truncateText(selectedExecutive, 30)}</h6>
                 </div>
-                <div className="card-body">
-                  <div className="row g-4">
+                <div className="card-body p-3">
+                  <div className="row g-3">
                     <div className="col-lg-6">
-                      <h6 className="text-muted mb-3">Operaciones por Mes</h6>
-                      <div style={{ height: 250 }}>
+                      <h6 className="text-muted mb-2 small">Operaciones por Mes</h6>
+                      <div style={{ height: 180 }}>
                         <ResponsiveContainer width="100%" height="100%">
                           <AreaChart data={chartData}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                            <XAxis dataKey="month" />
-                            <YAxis />
+                            <CartesianGrid strokeDasharray="2 2" stroke="#f8f9fa" />
+                            <XAxis 
+                              dataKey="month" 
+                              axisLine={false}
+                              tickLine={false}
+                              tick={{ fontSize: 10, fill: '#6c757d' }}
+                            />
+                            <YAxis hide />
                             <Tooltip />
                             <Area 
                               type="monotone" 
                               dataKey="ops" 
                               stroke="#0d6efd" 
                               fill="#0d6efd" 
-                              fillOpacity={0.6}
+                              fillOpacity={0.1}
                               name="Operaciones"
                             />
                           </AreaChart>
@@ -677,27 +554,27 @@ export default function App() {
                     </div>
 
                     <div className="col-lg-6">
-                      <h6 className="text-muted mb-3">KPIs del Período</h6>
-                      <div className="row g-2">
+                      <h6 className="text-muted mb-2 small">KPIs del Período</h6>
+                      <div className="row g-1">
                         {chartData.slice(-3).map((monthData) => (
                           <div key={monthData.month} className="col-12">
-                            <div className="p-3 bg-light rounded">
-                              <div className="d-flex justify-content-between align-items-center mb-2">
-                                <h6 className="fw-bold mb-0">{monthData.month}</h6>
-                                <span className="badge bg-primary">{monthData.ops} ops</span>
+                            <div className="p-2 bg-light rounded mb-1">
+                              <div className="d-flex justify-content-between align-items-center mb-1">
+                                <h6 className="fw-bold mb-0 small">{monthData.month}</h6>
+                                <span className="badge bg-primary badge-sm">{monthData.ops} ops</span>
                               </div>
-                              <div className="row g-2 small">
-                                <div className="col-6">
-                                  <div className="text-muted">Facturación:</div>
-                                  <div className="fw-semibold">{formatMoney(monthData.income)}</div>
+                              <div className="row g-1">
+                                <div className="col-4">
+                                  <div className="text-muted" style={{ fontSize: '11px' }}>Facturación:</div>
+                                  <div className="fw-semibold small">{formatMoney(monthData.income)}</div>
                                 </div>
-                                <div className="col-6">
-                                  <div className="text-muted">Profit:</div>
-                                  <div className="fw-semibold">{formatMoney(monthData.profit)}</div>
+                                <div className="col-4">
+                                  <div className="text-muted" style={{ fontSize: '11px' }}>Profit:</div>
+                                  <div className="fw-semibold small">{formatMoney(monthData.profit)}</div>
                                 </div>
-                                <div className="col-6">
-                                  <div className="text-muted">Margen:</div>
-                                  <div className="fw-semibold">{formatPct(monthData.profitPct)}</div>
+                                <div className="col-4">
+                                  <div className="text-muted" style={{ fontSize: '11px' }}>Margen:</div>
+                                  <div className="fw-semibold small">{formatPct(monthData.profitPct)}</div>
                                 </div>
                               </div>
                             </div>
@@ -710,33 +587,33 @@ export default function App() {
               </div>
             )}
 
-            {/* Métricas Adicionales */}
-            <div className="row g-4 mb-4">
+            {/* Métricas de Productividad Compactas */}
+            <div className="row g-3 mb-4">
               <div className="col-lg-4">
-                <div className="card shadow-sm h-100">
-                  <div className="card-body">
-                    <h5 className="card-title mb-3">
-                      <Target size={20} className="me-2 text-primary" />
+                <div className="card shadow-sm">
+                  <div className="card-body p-3">
+                    <h6 className="card-title mb-2">
+                      <Target size={16} className="me-2 text-primary" />
                       Productividad
-                    </h5>
-                    <div className="space-y-3">
+                    </h6>
+                    <div className="space-y-2">
                       {Object.entries(summaryData || {}).slice(0, 3).map(([exec, data]) => {
                         const opsPerMonth = selectedMonth !== "all" ? data.ops : (data.ops / (monthly.filter(m => m.executive === exec).length || 1));
                         const profitPerOp = data.ops > 0 ? data.profit / data.ops : 0;
                         
                         return (
-                          <div key={exec} className="border-bottom pb-3 mb-3">
-                            <div className="fw-semibold text-truncate mb-2" title={exec}>
+                          <div key={exec} className="border-bottom pb-2 mb-2">
+                            <div className="fw-semibold small text-truncate mb-1" title={exec}>
                               {getFirstWord(exec)}
                             </div>
-                            <div className="row g-1 small text-muted">
+                            <div className="row g-1">
                               <div className="col-6">
-                                <div>{selectedMonth !== "all" ? "Operaciones:" : "Ops/mes:"}</div>
-                                <div className="fw-bold text-dark">{selectedMonth !== "all" ? data.ops : opsPerMonth.toFixed(1)}</div>
+                                <div className="text-muted" style={{ fontSize: '11px' }}>{selectedMonth !== "all" ? "Operaciones:" : "Ops/mes:"}</div>
+                                <div className="fw-bold small text-dark">{selectedMonth !== "all" ? data.ops : opsPerMonth.toFixed(1)}</div>
                               </div>
                               <div className="col-6">
-                                <div>Profit/op:</div>
-                                <div className="fw-bold text-dark">{formatMoney(profitPerOp)}</div>
+                                <div className="text-muted" style={{ fontSize: '11px' }}>Profit/op:</div>
+                                <div className="fw-bold small text-dark">{formatMoney(profitPerOp)}</div>
                               </div>
                             </div>
                           </div>
@@ -748,30 +625,30 @@ export default function App() {
               </div>
 
               <div className="col-lg-4">
-                <div className="card shadow-sm h-100">
-                  <div className="card-body">
-                    <h5 className="card-title mb-3">
-                      <Users size={20} className="me-2 text-success" />
+                <div className="card shadow-sm">
+                  <div className="card-body p-3">
+                    <h6 className="card-title mb-2">
+                      <Users size={16} className="me-2 text-success" />
                       Análisis de Clientes
-                    </h5>
-                    <div className="space-y-3">
+                    </h6>
+                    <div className="space-y-2">
                       {Object.entries(summaryData || {}).slice(0, 3).map(([exec, data]) => {
                         const revenuePerClient = data.clients.size > 0 ? data.income / data.clients.size : 0;
                         const opsPerClient = data.clients.size > 0 ? data.ops / data.clients.size : 0;
                         
                         return (
-                          <div key={exec} className="border-bottom pb-3 mb-3">
-                            <div className="fw-semibold text-truncate mb-2" title={exec}>
+                          <div key={exec} className="border-bottom pb-2 mb-2">
+                            <div className="fw-semibold small text-truncate mb-1" title={exec}>
                               {getFirstWord(exec)}
                             </div>
-                            <div className="row g-1 small text-muted">
+                            <div className="row g-1">
                               <div className="col-6">
-                                <div>Revenue/cliente:</div>
-                                <div className="fw-bold text-dark">{formatMoney(revenuePerClient)}</div>
+                                <div className="text-muted" style={{ fontSize: '11px' }}>Revenue/cliente:</div>
+                                <div className="fw-bold small text-dark">{formatMoney(revenuePerClient)}</div>
                               </div>
                               <div className="col-6">
-                                <div>Ops/cliente:</div>
-                                <div className="fw-bold text-dark">{opsPerClient.toFixed(1)}</div>
+                                <div className="text-muted" style={{ fontSize: '11px' }}>Ops/cliente:</div>
+                                <div className="fw-bold small text-dark">{opsPerClient.toFixed(1)}</div>
                               </div>
                             </div>
                           </div>
@@ -783,28 +660,28 @@ export default function App() {
               </div>
 
               <div className="col-lg-4">
-                <div className="card shadow-sm h-100">
-                  <div className="card-body">
-                    <h5 className="card-title mb-3">
-                      <Award size={20} className="me-2 text-warning" />
+                <div className="card shadow-sm">
+                  <div className="card-body p-3">
+                    <h6 className="card-title mb-2">
+                      <Award size={16} className="me-2 text-warning" />
                       Rendimiento
-                    </h5>
-                    <div className="space-y-3">
-                      <div className="p-3 bg-primary bg-opacity-10 rounded">
-                        <div className="small text-primary fw-semibold">Mejor Margen</div>
-                        <div className="h5 fw-bold text-primary mb-0">
+                    </h6>
+                    <div className="space-y-2">
+                      <div className="p-2 bg-primary bg-opacity-10 rounded mb-2">
+                        <div className="text-primary fw-semibold" style={{ fontSize: '11px' }}>Mejor Margen</div>
+                        <div className="h6 fw-bold text-primary mb-0">
                           {topPerformers.length > 0 ? formatPct(Math.max(...topPerformers.map(p => p.profitMargin))) : "—"}
                         </div>
                       </div>
-                      <div className="p-3 bg-success bg-opacity-10 rounded">
-                        <div className="small text-success fw-semibold">Top Facturación</div>
-                        <div className="h5 fw-bold text-success mb-0">
+                      <div className="p-2 bg-success bg-opacity-10 rounded mb-2">
+                        <div className="text-success fw-semibold" style={{ fontSize: '11px' }}>Top Facturación</div>
+                        <div className="h6 fw-bold text-success mb-0">
                           {topPerformers.length > 0 ? formatMoney(Math.max(...topPerformers.map(p => p.income))) : "—"}
                         </div>
                       </div>
-                      <div className="p-3 bg-info bg-opacity-10 rounded">
-                        <div className="small text-info fw-semibold">Más Operaciones</div>
-                        <div className="h5 fw-bold text-info mb-0">
+                      <div className="p-2 bg-info bg-opacity-10 rounded">
+                        <div className="text-info fw-semibold" style={{ fontSize: '11px' }}>Más Operaciones</div>
+                        <div className="h6 fw-bold text-info mb-0">
                           {topPerformers.length > 0 ? Math.max(...topPerformers.map(p => p.ops)).toLocaleString() : "—"}
                         </div>
                       </div>
@@ -816,18 +693,24 @@ export default function App() {
           </>
         )}
 
-        {/* Footer */}
+        {/* Footer Compacto */}
         <div className="card shadow-sm">
-          <div className="card-body">
+          <div className="card-body p-3">
             <div className="d-flex justify-content-between align-items-center text-muted small">
               <div className="d-flex align-items-center">
-                <span className="me-3">📊 Dashboard desarrollado para análisis comercial</span>
+                <span className="me-3">Dashboard Comercial Avanzado</span>
                 <span className="me-1">•</span>
                 <span className="ms-3">Datos procesados: {ops ? ops.length : 0} operaciones</span>
               </div>
               <div className="d-flex align-items-center">
                 <span className="me-2">Última actualización:</span>
-                <span className="fw-semibold">{new Date().toLocaleString('es-CL')}</span>
+                <span className="fw-semibold">{new Date().toLocaleString('es-CL', { 
+                  day: '2-digit', 
+                  month: '2-digit', 
+                  year: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit'
+                })}</span>
               </div>
             </div>
           </div>
