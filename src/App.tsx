@@ -1,225 +1,26 @@
 import React, { useMemo, useState } from "react";
 import Papa from "papaparse";
 import "bootstrap/dist/css/bootstrap.min.css";
-import {
-  AreaChart,
-  Area,
-  BarChart,
-  Bar,
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  ComposedChart
-} from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from "recharts";
 import { TrendingUp, TrendingDown, Users, DollarSign, Target, Award, Calendar, BarChart3, Upload } from "lucide-react";
 
-type RawRow = string[];
-
-type Operation = {
-  executive: string;
-  date: Date | null;
-  client?: string | null;
-  invoiceRef?: string | null;
-  income?: number;
-  expense?: number;
-  profit?: number;
-  commission?: number;
-};
-
-type MonthKey = `${number}-${number}`;
-
-type MonthlyAgg = {
-  month: MonthKey;
-  executive: string;
-  income: number;
-  expense: number;
-  profit: number;
-  profitPct: number | null;
-  ops: number;
-  activeClients: number;
-  quotes: number;
-  winrate: number | null;
-  clients?: Set<string>;
-};
-
-const isNumeric = (s?: string | null) => !!s && /^-?\d+(?:\.\d+)?$/.test(s.replace(/,/g, ""));
-const toNum = (s?: string | null) => (isNumeric(s) ? Number(s!.replace(/,/g, "")) : undefined);
-
-function parseUSDate(s?: string | null): Date | null {
-  if (!s) return null;
-  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
-  if (!m) return null;
-  let [_, mm, dd, yy] = m;
-  const year = Number(yy.length === 2 ? (Number(yy) + 2000) : yy);
-  const month = Number(mm) - 1;
-  const day = Number(dd);
-  const d = new Date(Date.UTC(year, month, day));
-  return isNaN(+d) ? null : d;
-}
-
-function monthKey(d: Date): MonthKey {
-  return `${d.getUTCFullYear()}-${d.getUTCMonth() + 1}` as MonthKey;
-}
-
-function extractOperations(raw: RawRow[]): Operation[] {
-  const ops: Operation[] = [];
-  let currentExecutive = "";
-  const rowHas = (row: RawRow, needle: string) => row.some((c) => (c || "").toUpperCase().includes(needle.toUpperCase()));
-
-  for (let i = 0; i < raw.length; i++) {
-    const row = raw[i];
-    const c2 = row[2]?.trim() || "";
-
-    if (
-      c2 &&
-      !/^INV\d+/.test(c2) &&
-      !/^\d{3,}$/.test(c2) &&
-      i + 1 < raw.length &&
-      rowHas(raw[i + 1], "SHIPMENT")
-    ) {
-      currentExecutive = c2;
-      continue;
-    }
-
-    const isOp = /^INV\d+/.test(c2) || /^\d{3,}$/.test(c2);
-    if (isOp && currentExecutive) {
-      const date = parseUSDate(raw[i][5]);
-      const client = (raw[i][17] || "").trim() || null;
-      const income = toNum(raw[i][24]);
-      const expense = toNum(raw[i][27]);
-      const profit = toNum(raw[i][28]);
-      const commission = toNum(raw[i][33]);
-
-      ops.push({ executive: currentExecutive, date, client, invoiceRef: c2, income, expense, profit, commission });
-      continue;
-    }
-  }
-  return ops;
-}
-
-function aggregateMonthly(ops: Operation[]): MonthlyAgg[] {
-  const key = (ex: string, m: MonthKey) => `${ex}__${m}`;
-  const map = new Map<string, MonthlyAgg & { clients: Set<string> }>();
-
-  for (const op of ops) {
-    if (!op.date) continue;
-    const m = monthKey(op.date);
-    const k = key(op.executive, m);
-    if (!map.has(k)) {
-      map.set(k, { month: m, executive: op.executive, income: 0, expense: 0, profit: 0, profitPct: null, ops: 0, activeClients: 0, quotes: 0, winrate: null, clients: new Set<string>() });
-    }
-    const agg = map.get(k)!;
-
-    const isQuote = op.income === undefined && op.expense === undefined && op.profit === undefined;
-    if (isQuote) {
-      agg.quotes += 1;
-    } else {
-      agg.ops += 1;
-      agg.income += op.income || 0;
-      agg.expense += op.expense || 0;
-      agg.profit += op.profit || 0;
-      if (op.client) agg.clients.add(op.client);
-    }
-  }
-
-  const out: MonthlyAgg[] = [];
-  for (const agg of map.values()) {
-    const denom = agg.income !== 0 ? agg.income : 0;
-    agg.profitPct = denom ? (agg.profit / denom) * 100 : null;
-    agg.activeClients = agg.clients.size;
-    const attempts = agg.ops + agg.quotes;
-    agg.winrate = attempts ? (agg.ops / attempts) * 100 : null;
-    out.push(agg);
-  }
-  out.sort((a, b) => (a.executive === b.executive ? a.month.localeCompare(b.month) : a.executive.localeCompare(b.executive)));
-  return out;
-}
-
-function formatMoney(n?: number | null) {
-  if (n === undefined || n === null) return "—";
-  return new Intl.NumberFormat('es-CL', { 
-    style: 'currency', 
-    currency: 'CLP',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0
-  }).format(n);
-}
-
-function formatPct(n?: number | null) {
-  if (n === undefined || n === null) return "—";
-  return `${n.toFixed(1)}%`;
-}
-
-function truncateText(text: string | null | undefined, maxLength: number = 20): string {
-  if (!text || typeof text !== 'string') return 'N/A';
-  return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
-}
-
-function getFirstWord(text: string | null | undefined): string {
-  if (!text || typeof text !== 'string') return 'N/A';
-  const words = text.trim().split(/\s+/);
-  return words[0] || 'N/A';
-}
-
-const KPICard = ({ title, value, subtitle, icon: Icon, trend, bgColor = "primary" }: {
-  title: string;
-  value: string;
-  subtitle?: string;
-  icon: any;
-  trend?: { value: number; isPositive: boolean };
-  bgColor?: string;
-}) => {
-  return (
-    <div className={`card h-100 border-${bgColor} shadow-sm`} style={{ borderWidth: '2px' }}>
-      <div className="card-body">
-        <div className="d-flex justify-content-between align-items-start mb-3">
-          <div className={`p-2 rounded bg-${bgColor} bg-opacity-10`}>
-            <Icon size={32} className={`text-${bgColor}`} />
-          </div>
-          {trend && (
-            <div className={`d-flex align-items-center small fw-bold ${trend.isPositive ? 'text-success' : 'text-danger'}`}>
-              {trend.isPositive ? <TrendingUp size={16} className="me-1" /> : <TrendingDown size={16} className="me-1" />}
-              {Math.abs(trend.value).toFixed(1)}%
-            </div>
-          )}
-        </div>
-        <div>
-          <p className="text-muted small mb-1">{title}</p>
-          <h3 className="fw-bold mb-1">{value}</h3>
-          {subtitle && <p className="text-muted small mb-0">{subtitle}</p>}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const TrendIndicator = ({ trend, profitPctChange }: { trend: string; profitPctChange: number | null }) => {
-  if (trend === 'new') return <span className="badge bg-info">Nuevo</span>;
-  if (trend === 'stable') return <span className="badge bg-secondary">Estable</span>;
-  if (trend === 'up') return (
-    <span className="badge bg-success">
-      <TrendingUp size={12} className="me-1" />
-      +{profitPctChange?.toFixed(1)}%
-    </span>
-  );
-  if (trend === 'down') return (
-    <span className="badge bg-danger">
-      <TrendingDown size={12} className="me-1" />
-      {profitPctChange?.toFixed(1)}%
-    </span>
-  );
-  return null;
-};
-
-const COLORS = ['#0d6efd', '#198754', '#ffc107', '#dc3545', '#6f42c1', '#20c997'];
+// Imports de componentes y utilidades
+import { KPICard } from './components/KPICard';
+import { TrendIndicator } from './components/TrendIndicator';
+import { ExecutiveModal } from './components/ExecutiveModal';
+import { RevenueProfitChart } from './components/charts/RevenueProfitChart';
+import { MarginChart } from './components/charts/MarginChart';
+import { extractOperations, aggregateMonthly } from './utils/dataProcessing';
+import { formatMoney, formatPct, truncateText, getFirstWord } from './utils/formatters';
+import type {
+  RawRow,
+  Operation,
+  MonthlyAgg,
+  ExecutiveTrend,
+  ExecutiveSummary,
+  TopPerformer,
+  GlobalKPIs
+} from './utils/types';
 
 export default function App() {
   const [ops, setOps] = useState<Operation[] | null>(null);
@@ -231,21 +32,6 @@ export default function App() {
   // PASO 1: Datos base sin filtros
   const monthly = useMemo(() => (ops ? aggregateMonthly(ops) : []), [ops]);
   
-  const totals = useMemo(() => {
-    if (!ops) return null;
-    const byExec: Record<string, { ops: number; income: number; expense: number; profit: number; commission: number; clients: Set<string> }> = {};
-    for (const o of ops) {
-      if (!byExec[o.executive]) byExec[o.executive] = { ops: 0, income: 0, expense: 0, profit: 0, commission: 0, clients: new Set() };
-      byExec[o.executive].ops += 1;
-      byExec[o.executive].income += o.income || 0;
-      byExec[o.executive].expense += o.expense || 0;
-      byExec[o.executive].profit += o.profit || 0;
-      byExec[o.executive].commission += o.commission || 0;
-      if (o.client) byExec[o.executive].clients.add(o.client);
-    }
-    return byExec;
-  }, [ops]);
-
   // PASO 2: Opciones para dropdowns
   const availableMonths = useMemo(() => {
     if (!monthly) return [];
@@ -257,12 +43,10 @@ export default function App() {
     return Array.from(new Set(ops.map(op => op.executive).filter(exec => exec && exec.trim())));
   }, [ops]);
 
-  // PASO 3: LÓGICA DE FILTRADO CORREGIDA
-  // Para el RESUMEN EJECUTIVO: usar datos mensuales agregados filtrados
+  // PASO 3: LÓGICA DE FILTRADO
   const summaryData = useMemo(() => {
     if (!monthly) return null;
 
-    // Filtrar los datos mensuales según los filtros seleccionados
     let filteredMonthlyData = monthly;
 
     if (selectedMonth !== "all") {
@@ -273,8 +57,7 @@ export default function App() {
       filteredMonthlyData = filteredMonthlyData.filter(m => m.executive === selectedExecutive);
     }
 
-    // Agrupar por ejecutivo
-    const byExec: Record<string, { ops: number; income: number; expense: number; profit: number; commission: number; clients: Set<string> }> = {};
+    const byExec: Record<string, ExecutiveSummary> = {};
     
     for (const monthData of filteredMonthlyData) {
       if (!byExec[monthData.executive]) {
@@ -318,8 +101,8 @@ export default function App() {
     return Array.from(monthMap.values()).sort((a, b) => a.month.localeCompare(b.month));
   }, [monthly, selectedExecutive, selectedMonth]);
 
-  // PASO 5: KPIs globales basados en datos filtrados
-  const globalKPIs = useMemo(() => {
+  // PASO 5: KPIs globales
+  const globalKPIs = useMemo((): GlobalKPIs | null => {
     if (!summaryData) return null;
     
     const totalIncome = Object.values(summaryData).reduce((sum, exec) => sum + exec.income, 0);
@@ -345,7 +128,7 @@ export default function App() {
   }, [summaryData]);
 
   // PASO 6: Top performers
-  const topPerformers = useMemo(() => {
+  const topPerformers = useMemo((): TopPerformer[] => {
     if (!summaryData || Object.keys(summaryData).length === 0) return [];
     return Object.entries(summaryData)
       .map(([exec, data]) => ({
@@ -359,19 +142,11 @@ export default function App() {
       .sort((a, b) => b.profit - a.profit);
   }, [summaryData]);
 
-  // PASO 7: Análisis de tendencias (solo cuando no hay filtro de mes)
-  const executiveTrends = useMemo(() => {
+  // PASO 7: Análisis de tendencias
+  const executiveTrends = useMemo((): Record<string, ExecutiveTrend> => {
     if (!monthly || availableMonths.length < 2 || selectedMonth !== "all") return {};
     
-    const trends: Record<string, {
-      currentMonth: MonthlyAgg | null;
-      previousMonth: MonthlyAgg | null;
-      profitChange: number | null;
-      profitPctChange: number | null;
-      opsChange: number | null;
-      trend: 'up' | 'down' | 'stable' | 'new';
-    }> = {};
-
+    const trends: Record<string, ExecutiveTrend> = {};
     const executives = Array.from(new Set(monthly.map(m => m.executive)));
     
     executives.forEach(exec => {
@@ -414,7 +189,7 @@ export default function App() {
     return trends;
   }, [monthly, availableMonths, selectedMonth]);
 
-  // PASO 8: Modal operations (respetando filtros)
+  // PASO 8: Modal operations
   const modalOperations = useMemo(() => {
     if (!ops || !modalExecutive) return [];
     
@@ -423,7 +198,7 @@ export default function App() {
     if (selectedMonth !== "all") {
       filtered = filtered.filter(op => {
         if (!op.date) return false;
-        const opMonth = monthKey(op.date);
+        const opMonth = `${op.date.getUTCFullYear()}-${op.date.getUTCMonth() + 1}`;
         return opMonth === selectedMonth;
       });
     }
@@ -658,56 +433,10 @@ export default function App() {
             {/* Gráficos Principales */}
             <div className="row g-4 mb-4">
               <div className="col-lg-6">
-                <div className="card shadow-sm h-100">
-                  <div className="card-body">
-                    <h5 className="card-title mb-3">Facturación vs Profit</h5>
-                    <div style={{ height: 350 }}>
-                      <ResponsiveContainer width="100%" height="100%">
-                        <ComposedChart data={chartData}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                          <XAxis dataKey="month" />
-                          <YAxis />
-                          <Tooltip 
-                            formatter={(value: any, name: string) => [
-                              typeof value === 'number' ? formatMoney(value) : value, 
-                              name === 'income' ? 'Facturación' : name === 'profit' ? 'Profit' : name
-                            ]}
-                          />
-                          <Legend />
-                          <Bar dataKey="income" fill="#0d6efd" name="Facturación" />
-                          <Bar dataKey="profit" fill="#198754" name="Profit" />
-                        </ComposedChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                </div>
+                <RevenueProfitChart data={chartData} />
               </div>
-
               <div className="col-lg-6">
-                <div className="card shadow-sm h-100">
-                  <div className="card-body">
-                    <h5 className="card-title mb-3">Margen de Profit</h5>
-                    <div style={{ height: 350 }}>
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={chartData}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                          <XAxis dataKey="month" />
-                          <YAxis />
-                          <Tooltip formatter={(value: any) => [`${Number(value).toFixed(1)}%`, 'Margen']} />
-                          <Legend />
-                          <Line 
-                            type="monotone" 
-                            dataKey="profitPct" 
-                            stroke="#ffc107" 
-                            strokeWidth={3}
-                            name="Margen %" 
-                            dot={{ fill: '#ffc107', strokeWidth: 2, r: 6 }}
-                          />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                </div>
+                <MarginChart data={chartData} />
               </div>
             </div>
 
@@ -771,7 +500,7 @@ export default function App() {
               </div>
             )}
 
-            {/* Análisis de Tendencias por Ejecutivo - Solo sin filtro de mes */}
+            {/* Análisis de Tendencias por Ejecutivo */}
             {availableMonths.length > 1 && selectedMonth === "all" && Object.keys(executiveTrends).length > 0 && (
               <div className="card shadow-sm mb-4">
                 <div className="card-header bg-light">
@@ -830,7 +559,7 @@ export default function App() {
               </div>
             )}
 
-            {/* RESUMEN POR EJECUTIVO - CORREGIDO */}
+            {/* RESUMEN POR EJECUTIVO */}
             <div className="card shadow-sm mb-4">
               <div className="card-header bg-light">
                 <div className="d-flex justify-content-between align-items-center">
@@ -909,92 +638,15 @@ export default function App() {
             </div>
 
             {/* Modal para Operaciones del Ejecutivo */}
-            {showModal && modalExecutive && (
-              <div className="modal show d-block" tabIndex={-1} style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-                <div className="modal-dialog modal-xl">
-                  <div className="modal-content">
-                    <div className="modal-header">
-                      <h5 className="modal-title">
-                        Operaciones de {truncateText(modalExecutive, 40)}
-                        {selectedMonth !== "all" && <span className="text-muted"> - {selectedMonth}</span>}
-                      </h5>
-                      <button 
-                        type="button" 
-                        className="btn-close" 
-                        onClick={() => setShowModal(false)}
-                      ></button>
-                    </div>
-                    <div className="modal-body">
-                      <div className="d-flex justify-content-between align-items-center mb-3">
-                        <span className="text-muted">
-                          {modalOperations.length} operaciones encontradas
-                        </span>
-                        <span className="badge bg-primary">
-                          Total Profit: {formatMoney(modalOperations.reduce((sum, op) => sum + (op.profit || 0), 0))}
-                        </span>
-                      </div>
-                      
-                      <div className="table-responsive" style={{ maxHeight: '500px', overflowY: 'auto' }}>
-                        <table className="table table-hover table-sm">
-                          <thead className="table-light sticky-top">
-                            <tr>
-                              <th>Fecha</th>
-                              <th>Referencia</th>
-                              <th>Cliente</th>
-                              <th>Facturación</th>
-                              <th>Gasto</th>
-                              <th>Profit</th>
-                              <th>Margen</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {modalOperations.map((op, idx) => {
-                              const margin = op.income && op.profit ? (op.profit / op.income) * 100 : null;
-                              return (
-                                <tr key={idx}>
-                                  <td>{op.date ? op.date.toLocaleDateString('es-CL') : "—"}</td>
-                                  <td><small className="text-muted">{op.invoiceRef}</small></td>
-                                  <td>{truncateText(op.client, 20)}</td>
-                                  <td>{formatMoney(op.income)}</td>
-                                  <td>{formatMoney(op.expense)}</td>
-                                  <td>
-                                    <span className={`fw-bold ${(op.profit || 0) >= 0 ? 'text-success' : 'text-danger'}`}>
-                                      {formatMoney(op.profit)}
-                                    </span>
-                                  </td>
-                                  <td>
-                                    {margin !== null ? (
-                                      <span className={`badge ${
-                                        margin >= 20 ? 'bg-success' :
-                                        margin >= 10 ? 'bg-warning' :
-                                        'bg-danger'
-                                      }`}>
-                                        {formatPct(margin)}
-                                      </span>
-                                    ) : "—"}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                    <div className="modal-footer">
-                      <button 
-                        type="button" 
-                        className="btn btn-secondary" 
-                        onClick={() => setShowModal(false)}
-                      >
-                        Cerrar
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+            <ExecutiveModal
+              isOpen={showModal}
+              onClose={() => setShowModal(false)}
+              executiveName={modalExecutive || ''}
+              operations={modalOperations}
+              selectedMonth={selectedMonth}
+            />
 
-            {/* Análisis Detallado por Mes - Solo para ejecutivo específico */}
+            {/* Análisis Detallado por Mes */}
             {selectedExecutive !== "all" && (
               <div className="card shadow-sm mb-4">
                 <div className="card-header bg-light">
