@@ -1,5 +1,8 @@
 # Multi-stage build para optimizar tamaño
-FROM node:18.20.4-alpine AS builder
+FROM alpine:3.19 AS builder
+
+# Instalar Node.js
+RUN apk add --no-cache nodejs npm
 
 # Establecer directorio de trabajo
 WORKDIR /app
@@ -17,10 +20,10 @@ COPY . .
 RUN npm run build
 
 # Etapa de producción
-FROM node:18-alpine AS production
+FROM alpine:3.19 AS production
 
-# Instalar serve globalmente
-RUN npm install -g serve
+# Instalar Node.js y serve
+RUN apk add --no-cache nodejs npm && npm install -g serve
 
 # Crear usuario no-root por seguridad
 RUN addgroup -g 1001 -S nodejs
