@@ -35,5 +35,8 @@ COPY --from=builder --chown=nextjs:nodejs /app/dist ./dist
 # Cambiar a usuario no-root
 USER nextjs
 
-# REMOVER las líneas EXPOSE y CMD
-# Dejar que Railway maneje completamente el comando de inicio
+# IMPORTANTE: Exponer el puerto
+EXPOSE 3000
+
+# Comando de inicio
+CMD ["serve", "-s", "dist", "-l", "3000"]
