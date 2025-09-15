@@ -35,8 +35,5 @@ COPY --from=builder --chown=nextjs:nodejs /app/dist ./dist
 # Cambiar a usuario no-root
 USER nextjs
 
-# Exponer el puerto (Railway asignará dinámicamente)
-EXPOSE $PORT
-
-# Comando para ejecutar la aplicación usando la variable PORT de Railway
-CMD ["sh", "-c", "serve -s dist -l $PORT"]
+# REMOVER las líneas EXPOSE y CMD
+# Dejar que Railway maneje completamente el comando de inicio
