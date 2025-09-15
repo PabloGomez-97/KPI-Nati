@@ -1,4 +1,4 @@
-import type { RawRow, Operation, MonthKey, MonthlyAgg } from './types';
+import { RawRow, Operation, MonthKey, MonthlyAgg } from './types';
 
 const isNumeric = (s?: string | null) => !!s && /^-?\d+(?:\.\d+)?$/.test(s.replace(/,/g, ""));
 const toNum = (s?: string | null) => (isNumeric(s) ? Number(s!.replace(/,/g, "")) : undefined);
@@ -8,15 +8,38 @@ function parseUSDate(s?: string | null): Date | null {
   const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
   if (!m) return null;
   let [_, mm, dd, yy] = m;
-  const year = Number(yy.length === 2 ? (Number(yy) + 2000) : yy);
-  const month = Number(mm) - 1;
+  
+  // Corregir interpretación de años
+  let year: number;
+  if (yy.length === 2) {
+    const yearNum = Number(yy);
+    // Si el año es menor a 50, asumimos 20xx, si es mayor, 19xx
+    // Pero para este caso específico, forzamos 2025
+    if (yearNum >= 0 && yearNum <= 99) {
+      year = 2000 + yearNum;
+    } else {
+      year = yearNum;
+    }
+  } else {
+    year = Number(yy);
+  }
+  
+  const month = Number(mm) - 1; // Los meses en JS van de 0-11
   const day = Number(dd);
+  
+  // Validar que la fecha sea válida
+  if (month < 0 || month > 11 || day < 1 || day > 31) {
+    return null;
+  }
+  
   const d = new Date(Date.UTC(year, month, day));
   return isNaN(+d) ? null : d;
 }
 
 function monthKey(d: Date): MonthKey {
-  return `${d.getUTCFullYear()}-${d.getUTCMonth() + 1}` as MonthKey;
+  const year = d.getUTCFullYear();
+  const month = d.getUTCMonth() + 1;
+  return `${year}-${month}` as MonthKey;
 }
 
 export function extractOperations(raw: RawRow[]): Operation[] {
@@ -48,10 +71,20 @@ export function extractOperations(raw: RawRow[]): Operation[] {
       const profit = toNum(raw[i][28]);
       const commission = toNum(raw[i][33]);
 
+      // Debug: Log the parsed date to see what's happening
+      if (date) {
+        console.log(`Parsed date: ${raw[i][5]} -> ${date.toISOString()} -> Month key: ${monthKey(date)}`);
+      }
+
       ops.push({ executive: currentExecutive, date, client, invoiceRef: c2, income, expense, profit, commission });
       continue;
     }
   }
+  
+  // Debug: Log all unique months found
+  const uniqueMonths = new Set(ops.filter(op => op.date).map(op => monthKey(op.date!)));
+  console.log("Unique months found:", Array.from(uniqueMonths).sort());
+  
   return ops;
 }
 
