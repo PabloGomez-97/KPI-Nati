@@ -1,5 +1,5 @@
 # Multi-stage build para optimizar tamaño
-FROM node:18-alpine AS builder
+FROM node:18.20.4-alpine AS builder
 
 # Establecer directorio de trabajo
 WORKDIR /app
