@@ -298,7 +298,7 @@ export const CompactChartsGrid: React.FC<CompactChartProps> = ({ data, selectedK
           </span>
         )}
       </div>
-      {getChartsForKPI()}
+      {}
     </div>
   );
 };
