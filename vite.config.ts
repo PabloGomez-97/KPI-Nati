@@ -6,9 +6,11 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: false,
-    minify: true
+    minify: true,
+    assetsDir: 'assets'
   },
   server: {
     port: 3000
-  }
+  },
+  base: './'
 })
