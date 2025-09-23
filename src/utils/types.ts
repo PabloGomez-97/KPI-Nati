@@ -61,4 +61,37 @@ export type GlobalKPIs = {
   avgProfitMargin: number;
   avgDealSize: number;
   executiveCount: number;
+  totalExpenses: number;
+  roi: number;
+  revenueGrowth: number | null;
+  profitGrowth: number | null;
+  avgDaysToClose: number | null;
+  topClientRevenue: number;
+  clientConcentrationRisk: number;
+  operationalEfficiency: number;
+};
+
+export type WeekKey = `${number}-W${number}`;
+
+export type WeeklyAgg = {
+  week: WeekKey;
+  executive: string;
+  income: number;
+  expense: number;
+  profit: number;
+  profitPct: number | null;
+  ops: number;
+  activeClients: number;
+  quotes: number;
+  winrate: number | null;
+  clients?: Set<string>;
+};
+
+export type ExecutiveWeeklyTrend = {
+  currentWeek: WeeklyAgg | null;
+  previousWeek: WeeklyAgg | null;
+  profitChange: number | null;
+  profitPctChange: number | null;
+  opsChange: number | null;
+  trend: 'up' | 'down' | 'stable' | 'new';
 };

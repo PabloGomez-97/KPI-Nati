@@ -1,17 +1,17 @@
 import React, { useMemo, useState } from "react";
 import Papa from "papaparse";
 import "bootstrap/dist/css/bootstrap.min.css";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from "recharts";
-import { TrendingUp, TrendingDown, Users, DollarSign, Target, Award, Calendar, BarChart3, Upload } from "lucide-react";
+import { Users, DollarSign, Target, Award, Calendar, BarChart3, Upload } from "lucide-react";
 
 // Imports de componentes y utilidades
 import { TrendIndicator } from './components/TrendIndicator';
 import { ExecutiveModal } from './components/ExecutiveModal';
 import { EnhancedKPISection } from './components/EnhancedKPISection';
-import { CompactChartsGrid } from './components/charts/CompactCharts';
-import { extractOperations, aggregateMonthly } from './utils/dataProcessing';
+import { extractOperations, aggregateMonthly, aggregateWeekly, filterOperationsByMonth } from './utils/dataProcessing';
 import { calculateEnhancedGlobalKPIs, calculateAdvancedKPIs } from './utils/advancedKPIs';
 import { formatMoney, formatPct, truncateText, getFirstWord } from './utils/formatters';
+import { WeeklyTrendSection } from './components/WeeklyTrendSection';
+import type { WeeklyAgg, ExecutiveWeeklyTrend } from './utils/types';
 import type {
   Operation,
   MonthlyAgg,
@@ -32,6 +32,8 @@ export default function App() {
   
   // PASO 1: Datos base sin filtros
   const monthly = useMemo(() => (ops ? aggregateMonthly(ops) : []), [ops]);
+
+  const weekly = useMemo(() => (ops ? aggregateWeekly(ops) : []), [ops]);
   
   // PASO 2: Opciones para dropdowns
   const availableMonths = useMemo(() => {
@@ -73,34 +75,6 @@ export default function App() {
 
     return byExec;
   }, [monthly, selectedMonth, selectedExecutive]);
-
-  // PASO 4: Datos para gráficos
-  const chartData = useMemo(() => {
-    if (!monthly) return [];
-    
-    let filteredForCharts = monthly;
-    
-    if (selectedExecutive !== "all") {
-      filteredForCharts = filteredForCharts.filter(m => m.executive === selectedExecutive);
-    }
-    
-    if (selectedMonth !== "all") {
-      filteredForCharts = filteredForCharts.filter(m => m.month === selectedMonth);
-    }
-
-    const monthMap = new Map<string, any>();
-    
-    filteredForCharts.forEach(m => {
-      const existing = monthMap.get(m.month) || { month: m.month, income: 0, profit: 0, ops: 0, profitPct: 0 };
-      existing.income += m.income;
-      existing.profit += m.profit;
-      existing.ops += m.ops;
-      existing.profitPct = existing.income > 0 ? (existing.profit / existing.income) * 100 : 0;
-      monthMap.set(m.month, existing);
-    });
-    
-    return Array.from(monthMap.values()).sort((a, b) => a.month.localeCompare(b.month));
-  }, [monthly, selectedExecutive, selectedMonth]);
 
   // PASO 5: KPIs globales mejorados
   const globalKPIs = useMemo((): GlobalKPIs | null => {
@@ -176,19 +150,60 @@ export default function App() {
     return trends;
   }, [monthly, availableMonths, selectedMonth]);
 
+  const executiveWeeklyTrends = useMemo((): Record<string, ExecutiveWeeklyTrend> => {
+    if (!weekly || weekly.length < 2 || selectedMonth !== "all") return {};
+    
+    const trends: Record<string, ExecutiveWeeklyTrend> = {};
+    const executives = Array.from(new Set(weekly.map(w => w.executive)));
+    
+    executives.forEach(exec => {
+      const execWeekly = weekly.filter(w => w.executive === exec).sort((a, b) => a.week.localeCompare(b.week));
+      
+      if (execWeekly.length >= 2) {
+        const current = execWeekly[execWeekly.length - 1];
+        const previous = execWeekly[execWeekly.length - 2];
+        
+        const profitChange = current.profit - previous.profit;
+        const profitPctChange = previous.profit !== 0 ? ((current.profit - previous.profit) / Math.abs(previous.profit)) * 100 : null;
+        const opsChange = current.ops - previous.ops;
+        
+        let trend: 'up' | 'down' | 'stable' | 'new';
+        if (profitPctChange === null) trend = 'new';
+        else if (Math.abs(profitPctChange) < 5) trend = 'stable';
+        else if (profitPctChange > 0) trend = 'up';
+        else trend = 'down';
+        
+        trends[exec] = {
+          currentWeek: current,
+          previousWeek: previous,
+          profitChange,
+          profitPctChange,
+          opsChange,
+          trend
+        };
+      } else if (execWeekly.length === 1) {
+        trends[exec] = {
+          currentWeek: execWeekly[0],
+          previousWeek: null,
+          profitChange: null,
+          profitPctChange: null,
+          opsChange: null,
+          trend: 'new'
+        };
+      }
+    });
+    
+    return trends;
+  }, [weekly, selectedMonth]);
+
   // PASO 9: Modal operations
   const modalOperations = useMemo(() => {
     if (!ops || !modalExecutive) return [];
     
     let filtered = ops.filter(op => op.executive === modalExecutive);
     
-    if (selectedMonth !== "all") {
-      filtered = filtered.filter(op => {
-        if (!op.date) return false;
-        const opMonth = `${op.date.getUTCFullYear()}-${op.date.getUTCMonth() + 1}`;
-        return opMonth === selectedMonth;
-      });
-    }
+    // Usar la nueva función de filtrado
+    filtered = filterOperationsByMonth(filtered, selectedMonth);
     
     return filtered.sort((a, b) => (b.date?.getTime() || 0) - (a.date?.getTime() || 0));
   }, [ops, modalExecutive, selectedMonth]);
@@ -222,6 +237,11 @@ export default function App() {
       skipEmptyLines: true,
       encoding: "latin1",
     });
+  }
+
+  function handleExecutiveClickFromTrends(executiveName: string) {
+    setModalExecutive(executiveName);
+    setShowModal(true);
   }
 
   return (
@@ -287,12 +307,6 @@ export default function App() {
               advancedKPIs={advancedKPIs}
               selectedKPI={selectedKPI}
               onKPISelect={setSelectedKPI}
-            />
-
-            {/* Gráficos Compactos */}
-            <CompactChartsGrid 
-              data={chartData} 
-              selectedKPI={selectedKPI}
             />
 
             {/* Controles y Top Performers Compactos */}
@@ -391,43 +405,14 @@ export default function App() {
               </div>
             </div>
 
-            {/* Análisis de Tendencias Compacto */}
-            {availableMonths.length > 1 && selectedMonth === "all" && Object.keys(executiveTrends).length > 0 && (
-              <div className="card shadow-sm mb-4">
-                <div className="card-header bg-light p-3">
-                  <h6 className="card-title mb-0">Análisis de Tendencias Mensuales</h6>
-                  <small className="text-muted">Comparación del último mes vs mes anterior</small>
-                </div>
-                <div className="card-body p-3">
-                  <div className="row g-2">
-                    {Object.entries(executiveTrends).slice(0, 6).map(([exec, trend]) => (
-                      <div key={exec} className="col-lg-2 col-md-4">
-                        <div className="card border-0 bg-light h-100">
-                          <div className="card-body p-2">
-                            <div className="d-flex justify-content-between align-items-start mb-1">
-                              <h6 className="card-title mb-0 small" title={exec}>
-                                {truncateText(exec, 15)}
-                              </h6>
-                              <TrendIndicator trend={trend.trend} profitPctChange={trend.profitPctChange} />
-                            </div>
-                            
-                            <div className="small">
-                              <div className="d-flex justify-content-between">
-                                <span className="text-muted">Actual:</span>
-                                <span className="fw-bold">{formatMoney(trend.currentMonth?.profit || 0)}</span>
-                              </div>
-                              <div className="d-flex justify-content-between">
-                                <span className="text-muted">Anterior:</span>
-                                <span>{formatMoney(trend.previousMonth?.profit || 0)}</span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
+            {/* Análisis de Tendencias con Toggle Mensual/Semanal */}
+            {availableMonths.length > 1 && selectedMonth === "all" && (
+              <WeeklyTrendSection
+              executiveTrends={executiveTrends}
+              executiveWeeklyTrends={executiveWeeklyTrends}
+              selectedPeriod={selectedMonth}
+              onExecutiveClick={handleExecutiveClickFromTrends}
+            />
             )}
 
             {/* RESUMEN POR EJECUTIVO Compacto */}
@@ -517,75 +502,6 @@ export default function App() {
               operations={modalOperations}
               selectedMonth={selectedMonth}
             />
-
-            {/* Análisis Detallado por Ejecutivo Individual */}
-            {selectedExecutive !== "all" && (
-              <div className="card shadow-sm mb-4">
-                <div className="card-header bg-light p-3">
-                  <h6 className="card-title mb-0">Análisis Mensual - {truncateText(selectedExecutive, 30)}</h6>
-                </div>
-                <div className="card-body p-3">
-                  <div className="row g-3">
-                    <div className="col-lg-6">
-                      <h6 className="text-muted mb-2 small">Operaciones por Mes</h6>
-                      <div style={{ height: 180 }}>
-                        <ResponsiveContainer width="100%" height="100%">
-                          <AreaChart data={chartData}>
-                            <CartesianGrid strokeDasharray="2 2" stroke="#f8f9fa" />
-                            <XAxis 
-                              dataKey="month" 
-                              axisLine={false}
-                              tickLine={false}
-                              tick={{ fontSize: 10, fill: '#6c757d' }}
-                            />
-                            <YAxis hide />
-                            <Tooltip />
-                            <Area 
-                              type="monotone" 
-                              dataKey="ops" 
-                              stroke="#0d6efd" 
-                              fill="#0d6efd" 
-                              fillOpacity={0.1}
-                              name="Operaciones"
-                            />
-                          </AreaChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </div>
-
-                    <div className="col-lg-6">
-                      <h6 className="text-muted mb-2 small">KPIs del Período</h6>
-                      <div className="row g-1">
-                        {chartData.slice(-3).map((monthData) => (
-                          <div key={monthData.month} className="col-12">
-                            <div className="p-2 bg-light rounded mb-1">
-                              <div className="d-flex justify-content-between align-items-center mb-1">
-                                <h6 className="fw-bold mb-0 small">{monthData.month}</h6>
-                                <span className="badge bg-primary badge-sm">{monthData.ops} ops</span>
-                              </div>
-                              <div className="row g-1">
-                                <div className="col-4">
-                                  <div className="text-muted" style={{ fontSize: '11px' }}>Facturación:</div>
-                                  <div className="fw-semibold small">{formatMoney(monthData.income)}</div>
-                                </div>
-                                <div className="col-4">
-                                  <div className="text-muted" style={{ fontSize: '11px' }}>Profit:</div>
-                                  <div className="fw-semibold small">{formatMoney(monthData.profit)}</div>
-                                </div>
-                                <div className="col-4">
-                                  <div className="text-muted" style={{ fontSize: '11px' }}>Margen:</div>
-                                  <div className="fw-semibold small">{formatPct(monthData.profitPct)}</div>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
 
             {/* Métricas de Productividad Compactas */}
             <div className="row g-3 mb-4">
