@@ -222,3 +222,35 @@ export function aggregateWeekly(ops: Operation[]): WeeklyAgg[] {
   out.sort((a, b) => (a.executive === b.executive ? a.week.localeCompare(b.week) : a.executive.localeCompare(b.executive)));
   return out;
 }
+
+// Función para verificar si una operación pertenece a una semana específica
+function operationBelongsToWeek(op: Operation, targetWeek: string): boolean {
+  if (!op.date) return false;
+  
+  const opWeekKey = getWeekKey(op.date);
+  return opWeekKey === targetWeek;
+}
+
+// Nueva función: Filtrar operaciones por período (mes o semana)
+export function filterOperationsByPeriod(operations: Operation[], selectedPeriod: string): Operation[] {
+  if (selectedPeriod === "all") return operations;
+  
+  // Detectar si es semana (contiene 'W') o mes
+  if (selectedPeriod.includes('W')) {
+    return operations.filter(op => operationBelongsToWeek(op, selectedPeriod));
+  } else {
+    return operations.filter(op => operationBelongsToMonth(op, selectedPeriod));
+  }
+}
+
+// Función auxiliar para convertir semana a mes aproximado (para el modal)
+export function weekToApproximateMonth(weekKey: string): string {
+  const [year, weekPart] = weekKey.split('-W');
+  const weekNum = parseInt(weekPart);
+  
+  // Convertir número de semana a mes aproximado
+  const approximateMonth = Math.ceil(weekNum / 4.33);
+  const clampedMonth = Math.min(Math.max(approximateMonth, 1), 12);
+  
+  return `${year}-${clampedMonth}`;
+}

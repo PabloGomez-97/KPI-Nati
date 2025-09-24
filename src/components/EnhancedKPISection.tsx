@@ -93,10 +93,6 @@ export const EnhancedKPISection: React.FC<EnhancedKPISectionProps> = ({
             bgColor="primary"
             isSelected={selectedKPI === 'revenue'}
             onClick={() => onKPISelect('revenue')}
-            trend={globalKPIs.revenueGrowth ? { 
-              value: globalKPIs.revenueGrowth, 
-              isPositive: globalKPIs.revenueGrowth > 0 
-            } : undefined}
           />
         </div>
         <div className="col-lg-3 col-md-6">
@@ -108,10 +104,6 @@ export const EnhancedKPISection: React.FC<EnhancedKPISectionProps> = ({
             bgColor="success"
             isSelected={selectedKPI === 'profit'}
             onClick={() => onKPISelect('profit')}
-            trend={globalKPIs.profitGrowth ? { 
-              value: globalKPIs.profitGrowth, 
-              isPositive: globalKPIs.profitGrowth > 0 
-            } : undefined}
           />
         </div>
         <div className="col-lg-3 col-md-6">
